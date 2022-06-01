@@ -1,0 +1,8 @@
+{
+    "smtp_domain": "smtp.exmail.qq.com",
+    "from_email_address": "",
+    "from_email_password": "",
+    "subject": "BET TEST",
+    "html_body": "<h1>Hello, World</h1>",
+    "attachment_file_name": "your_attachment_file_name"
+}
