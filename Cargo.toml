@@ -12,3 +12,4 @@ serde_json = "1.0.81"
 
 [profile.release]
 lto = true
+strip = true
