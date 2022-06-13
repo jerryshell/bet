@@ -1,10 +1,12 @@
-use lettre::{smtp::authentication::Credentials, SmtpClient, Transport};
-use lettre_email::{mime, EmailBuilder};
+use lettre::{
+    message::{Attachment, Body, MultiPart, SinglePart},
+    transport::smtp::authentication::Credentials,
+    Message, SmtpTransport, Transport,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::BufReader,
-    path::Path,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,37 +55,53 @@ fn main() {
     let email_config: EmailConfig = serde_json::from_reader(reader).unwrap();
     println!("email_config: {:#?}", email_config);
 
-    let mut mailer = SmtpClient::new_simple(&email_config.smtp_domain)
+    let creds = Credentials::new(
+        email_config.from_email_address.clone(),
+        email_config.from_email_password.clone(),
+    );
+
+    let mailer = SmtpTransport::relay(&email_config.smtp_domain)
         .unwrap()
-        .credentials(Credentials::new(
-            email_config.from_email_address.clone(),
-            email_config.from_email_password,
-        ))
-        .transport();
+        .credentials(creds)
+        .build();
 
     let entity_vec = get_entity_vec();
     println!("entity_vec: {:#?}", entity_vec);
 
-    let mut email_vec = vec![];
-    for entity in entity_vec {
-        let email = EmailBuilder::new()
-            .to(entity.to_email_address)
-            .from(email_config.from_email_address.clone())
-            .subject(email_config.subject.clone())
-            .html(email_config.html_body.clone())
-            .attachment_from_file(
-                Path::new(&entity.file_path),
-                Some(&email_config.attachment_file_name),
-                &mime::APPLICATION_OCTET_STREAM,
-            )
-            .unwrap()
-            .build()
-            .unwrap();
-        email_vec.push(email);
-    }
+    let email_vec: Vec<Message> = entity_vec
+        .iter()
+        .map(|entity| {
+            let attachment_file = fs::read(entity.file_path.clone()).unwrap();
+            let attachment_file_body = Body::new(attachment_file);
+            Message::builder()
+                .from(email_config.from_email_address.clone().parse().unwrap())
+                .to(entity.to_email_address.parse().unwrap())
+                .subject(email_config.subject.clone())
+                .multipart(
+                    MultiPart::mixed()
+                        .multipart(
+                            MultiPart::alternative()
+                                // .singlepart(SinglePart::plain(String::from("Hello, world! :)")))
+                                .multipart(
+                                    MultiPart::related().singlepart(SinglePart::html(
+                                        email_config.html_body.clone(),
+                                    )),
+                                ),
+                        )
+                        .singlepart(
+                            Attachment::new(String::from(&email_config.attachment_file_name)).body(
+                                attachment_file_body,
+                                "application/octet-stream".parse().unwrap(),
+                            ),
+                        ),
+                )
+                .unwrap()
+        })
+        .collect();
+    println!("email_vec: {:#?}", email_vec);
 
     for email in email_vec {
-        let result = mailer.send(email.into());
-        println!("{:?}", result);
+        let result = mailer.send(&email);
+        println!("{:#?}", result);
     }
 }
